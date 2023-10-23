@@ -1,58 +1,85 @@
+import os
+from datetime import datetime
+
 import pandas as pd
 import spacy
 import torch
-from nltk.tokenize import sent_tokenize
 
-from models import UniversalRNN
-from data import TextTokenDataset
+import models
 from post_processing import predict_text_spans
-from text import get_locations, preprocess_text
+from text import get_locations, preprocess_text, hard_processing
 
 tokenizer = spacy.load("xx_ent_wiki_sm", disable=["tagger", "parser", "ner", "textcat"])
 
 
-def process_document(model_class, state_dict, series, vocab, tokenize):
+def predict_locations(model_class, state_dict, series, vocab, tokenize, threshold):
     locations = []
-    for doc in series:
-        sentences = sent_tokenize(doc)
-        input_df = pd.DataFrame(
-            {
-                'text': sentences,
-                'loc_markers': [[]] * len(sentences)
-            }
-        )
+    input_df = pd.DataFrame(
+        {
+            'text': series.tolist(),
+            'loc_markers': [[]] * len(series)
+        }
+    )
 
-        # dataset = TextTokenDataset(
-        #     input_df['text'].tolist(),
-        #     input_df['loc_markers'].tolist(),
-        #     vocab,
-        #     tokenize
-        # )
-        token_spans = predict_text_spans(model_class, state_dict, input_df, vocab, tokenizer)
+    token_spans = predict_text_spans(model_class, state_dict, input_df, vocab, tokenizer, threshold)
 
-        current_locations = []
-        for sentence, spans in zip(sentences, token_spans):
-            # if spans:
-            #     for span in spans:
-            #         current_locations.append(sentence[span[0]: span[1]])
-            current_locations.extend(get_locations((sentence, spans)))
-        locations.append(current_locations)
+    for sentence, spans in zip(series, token_spans):
+        locations.append(get_locations((sentence, spans)))
     return locations
 
 
 unseen_df = pd.read_csv('../datasets/test.csv')
 unseen_df.head()
 
-unseen_df['clean_text'] = unseen_df['text'].apply(preprocess_text)
+unseen_df['clean_text'] = unseen_df['text'].apply(hard_processing)
+
+# if __name__ == '__main__':
+#     path = '../checkpoints/2023-10-22 18.54.33/'
+#
+#     vocab = torch.load(path + 'vocab.voc')
+#     state_dict = torch.load(path + 'Model 0.9092 0.55.pth')
+#
+#     model = state_dict['model']
+#
+#     locs = predict_locations(getattr(models, model['name']), model, unseen_df['clean_text'], vocab, tokenizer, 0.55)
+#
+#     unseen_df['locations'] = pd.Series(locs)
+#
+#     df_to_save = unseen_df.drop(columns=['clean_text', 'text'])
+#     df_to_save.to_csv('submission.csv', index=False)
 
 if __name__ == '__main__':
-    path = '../checkpoints/2023-10-22 10.25.34/'
-    vocab = torch.load(path + 'vocab.voc')
-    state_dict = torch.load(path + 'Model 0.9527.pth')
+    lover_date_str = "2023-10-22 19.30.00"
+    lover_date = datetime.strptime(lover_date_str, "%Y-%m-%d %H.%M.%S")
 
-    locs = process_document(UniversalRNN, state_dict, unseen_df['clean_text'], vocab, tokenizer)
+    upper_date_str = "2023-10-22 22.00.00"
+    upper_date = datetime.strptime(upper_date_str, "%Y-%m-%d %H.%M.%S")
 
-    unseen_df['locations'] = pd.Series(locs)
+    for folder_name in os.listdir('../checkpoints'):
+        try:
+            folder_date = datetime.strptime(folder_name, "%Y-%m-%d %H.%M.%S")
+            if upper_date < folder_date:
+                path = '../checkpoints/' + folder_name
+                vocab = torch.load(path + '/vocab.voc')
+                for model_name in os.listdir(path):
+                    if model_name.endswith('.pth'):
+                        state_dict = torch.load(path + '/' + model_name)
+                        break
 
-    df_to_save = unseen_df.drop(columns=['clean_text', 'text'])
-    df_to_save.to_csv('submission.csv', index=False)
+                model = state_dict['model']
+
+                locs = predict_locations(
+                    getattr(models, model['name']), model, unseen_df['clean_text'], vocab, tokenizer,
+                    float(model_name.removesuffix('.pth').split(' ')[-1])
+                    )
+
+                unseen_df['locations'] = pd.Series(locs)
+
+                df_to_save = unseen_df.drop(columns=['clean_text', 'text'])
+                df_to_save.to_csv(
+                    f'{model["name"]} {model["model_params"]["num_layers"]}x{model["model_params"]["rnn_channels"]} sche-er2 submission.csv',
+                    index=False
+                    )
+
+        except ValueError:
+            pass

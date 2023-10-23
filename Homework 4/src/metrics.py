@@ -4,13 +4,68 @@ from typing import List
 import numpy as np
 import pandas as pd
 
+from text import hard_processing
 
-def hard_processing(text):
-    text = re.sub(r"[{re.escape(string.punctuation)}]", "", text)
-    text = re.sub(r'\d', '', text)
-    text = re.sub(r'\b\w\b\s?', '', text)
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text.lower()
+
+def find_best_thresholds(valid_epoch_targets, valid_pred_final, valid_epoch_texts, valid_epoch_labels):
+    thresholds = np.arange(0.1, 1.0, 0.05)
+    f1_scores = []
+    for thresh in thresholds:
+        valid_pred_binary = (valid_epoch_labels > thresh).astype(int)
+        precision = sklearn.metrics.precision_score(valid_epoch_targets, valid_pred_binary)
+        recall = sklearn.metrics.recall_score(valid_epoch_targets, valid_pred_binary)
+        f1 = 2 * (precision * recall) / (precision + recall)
+        f1_scores.append(f1)
+
+    # Choose the threshold that maximizes F1 score
+    optimal_threshold = thresholds[np.argmax(f1_scores)]
+
+    # Apply the optimal threshold to obtain final predictions
+    valid_pred_final = (valid_epoch_labels > optimal_threshold).astype(int)
+
+    # Compute metrics using optimal threshold
+    valid_metric_optimal = apply_connected_regions_and_compute_metric(
+        valid_epoch_targets,
+        valid_pred_final,
+        valid_epoch_texts,
+        tresh=optimal_threshold
+    )
+
+    print("Optimal Threshold:", optimal_threshold)
+    print("Valid metric with optimal threshold:", valid_metric_optimal)
+
+
+def find_optimal_threshold(
+        y_true,
+        y_pred,
+        texts
+):
+    """
+    Find the optimal threshold that maximizes F1 score based on ground truth and predicted labels.
+
+    Args:
+        y_true (List[List[str]]): Ground truth labels.
+        y_pred (List[List[str]]): Predicted labels.
+
+    Returns:
+        float: Optimal threshold.
+    """
+    thresholds = np.arange(0.1, 1.0, 0.05)
+    f1_scores = []
+    metrics = []
+
+    for thresh in thresholds:
+        metric = apply_connected_regions_and_compute_metric(
+            y_true,
+            y_pred,
+            texts,
+            thresh
+        )
+        f1_scores.append(metric["f1"])
+        metrics.append(metric)
+
+    optimal_index = np.argmax(f1_scores)
+    return thresholds[optimal_index], metrics[optimal_index]
 
 
 def comp_metric(y_true: List[List[str]], y_pred: List[List[str]]):

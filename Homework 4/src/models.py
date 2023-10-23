@@ -74,7 +74,8 @@ class ResRNN(nn.Module):
             out_channels,
             rnn_channels=512,
             num_layers=2,
-            bidirectional=False,
+            bidirectional=True,
+            skip_embeddings=True,
             dropout_rate=0.4
     ):
         super().__init__()
@@ -85,23 +86,25 @@ class ResRNN(nn.Module):
             'rnn_channels': rnn_channels,
             'num_layers': num_layers,
             'bidirectional': bidirectional,
+            'skip_embeddings': skip_embeddings,
             'dropout_rate': dropout_rate,
         }
 
         self.bidirectional = bidirectional
+        self.skip_embeddings = skip_embeddings
 
         self.embedding_layer = nn.Sequential(
-            nn.Embedding(num_embeddings, rnn_channels),
+            nn.Embedding(num_embeddings, rnn_channels * 2 if bidirectional else rnn_channels),
             nn.Dropout(dropout_rate / 2),
         )
 
         self.rnns = nn.ModuleList(
             [
                 nn.GRU(
+                    rnn_channels * 2 if bidirectional else rnn_channels,
                     rnn_channels,
-                    rnn_channels,
-                    bidirectional=bidirectional,
                     num_layers=1,
+                    bidirectional=bidirectional,
                     batch_first=True
                 ) for _ in range(num_layers)
             ]
@@ -118,20 +121,24 @@ class ResRNN(nn.Module):
     def forward(self, x):
         emb = self.embedding_layer(x)
 
-        x = self.rnns[0](emb)[0]
-        for i, rnn in enumerate(self.rnns[1:]):
-            if self.bidirectional:
-                prev_x = torch.stack([x, x], dim=2)
-            else:
-                prev_x = x
+        x = self._apply_rnn(emb)
 
-            x = rnn(x)[0] + prev_x
+        if self.skip_embeddings:
+            x = x + emb
 
         x = self.classifier(x)
         return x
 
+    def _apply_rnn(self, x):
+        x = self.rnns[0](x)[0]
+        for i, rnn in enumerate(self.rnns[1:]):
+            x = rnn(x)[0] + x
+
+        return x
+
+
 
 if __name__ == '__main__':
     x = torch.randint(0, 16, (8, 10))
-    n = ResRNN(16, 1, 64)
+    n = ResRNN(16, 1, 64, bidirectional=True)
     print(n(x).shape)

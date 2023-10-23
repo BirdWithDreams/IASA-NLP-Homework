@@ -49,7 +49,7 @@ def get_precise_text_spans(original_text, tokens, token_spans):
     return text_spans
 
 
-def predict_token_spans(model_class, state_dict, dataset):
+def predict_token_spans(model_class, state_dict, dataset, threshold=.5):
     from training import torch_loop
 
     model = model_class(**state_dict['model_params'])
@@ -81,11 +81,11 @@ def predict_token_spans(model_class, state_dict, dataset):
         skip_concat=True
     )
 
-    prediction_token_spans = find_connected_components([el.squeeze() > 0.5 for el in labels])
+    prediction_token_spans = find_connected_components([el.squeeze() > threshold for el in labels])
     return prediction_token_spans
 
 
-def predict_text_spans(model_class, state_dict, df, vocab, tokenizer):
+def predict_text_spans(model_class, state_dict, df, vocab, tokenizer, threshold=0.5):
     dataset = TextTokenDataset(
         df['text'].tolist(),
         df['loc_markers'].tolist(),
@@ -93,7 +93,7 @@ def predict_text_spans(model_class, state_dict, df, vocab, tokenizer):
         tokenizer,
     )
 
-    prediction_token_spans = predict_token_spans(model_class, state_dict, dataset)
+    prediction_token_spans = predict_token_spans(model_class, state_dict, dataset, threshold)
 
     prediction_text_spans = [
         get_precise_text_spans(

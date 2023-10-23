@@ -44,12 +44,22 @@ class TextTokenDataset(Dataset):
 
 
 class DynamicTextTokenDataset(TextTokenDataset):
-    def __init__(self, csv_file, vocab, tokenizer, text_column='clean_text', loc_markers_column='clean_loc_markers'):
+    def __init__(self,
+                 csv_file,
+                 vocab,
+                 tokenizer,
+                 text_column='clean_text',
+                 loc_markers_column='clean_loc_markers',
+                 num_of_samples=None
+                 ):
         self.csv_file = csv_file
 
         with open(csv_file, 'r', encoding='utf-8') as data_io:
             self.column_names = data_io.readline().split(',')
-            self.data_len = sum(1 for line in data_io)  # subtract 1 for header
+            if num_of_samples is None:
+                self.data_len = sum(1 for _ in data_io)
+            else:
+                self.data_len = num_of_samples
 
         self.vocab = vocab
         self.tokenizer = tokenizer
@@ -138,26 +148,28 @@ def build_vocab(series, tokenizer):
 
     vocab = build_vocab_from_iterator(
         yield_tokens(series.tolist()),
-        specials=["<unk>", "<pad>"]
+        specials=["<unk>", "<pad>"],
+        min_freq=3,
     )
     vocab.set_default_index(vocab["<unk>"])
 
     return vocab
 
 
-def build_vocab_from_file(file_name, text_column, tokenizer, chunksize=500):
+def build_vocab_from_file(file_name, text_column, tokenizer, chunk_size=1000):
     def yield_tokens(texts):
         for text in texts:
             yield [token.text for token in tokenizer(text)]
 
     def yield_with_chunks():
-        chunks = pd.read_csv(file_name, usecols=[text_column], chunksize=chunksize)
+        chunks = pd.read_csv(file_name, usecols=[text_column], chunksize=chunk_size)
         for chunk in chunks:
             yield from yield_tokens(chunk.iloc[:, 0].tolist())
 
     vocab = build_vocab_from_iterator(
         yield_with_chunks(),
-        specials=["<unk>", "<pad>"]
+        specials=["<unk>", "<pad>"],
+        min_freq=3,
     )
     vocab.set_default_index(vocab["<unk>"])
 

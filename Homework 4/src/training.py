@@ -1,12 +1,14 @@
 from copy import deepcopy
 
 import numpy as np
+from sklearn.metrics import roc_auc_score
+
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from metrics import apply_connected_regions_and_compute_metric
+from metrics import apply_connected_regions_and_compute_metric, find_optimal_threshold
 
 DEVICE = torch.device(['cpu', 'cuda'][torch.cuda.is_available()])
 
@@ -66,6 +68,7 @@ def training_loop(
         test_dataloader: DataLoader,
         device: torch.device = DEVICE,
         verbose=0,
+        return_stats=False
 ):
     model = model.to(device)
     scheduler.verbose = (verbose > 0)
@@ -77,6 +80,7 @@ def training_loop(
     best_metric = {
         "f1": - np.inf,
     }
+    best_threshold = .5
     best_model_state_dict = None
 
     for epoch in range(1, epochs + 1):
@@ -108,29 +112,44 @@ def training_loop(
             mode="eval",
             verbose=verbose,
         )
+
         # 2.2 Compute and print valid metrics
-        valid_metric = apply_connected_regions_and_compute_metric(
+        threshold, valid_metric = find_optimal_threshold(
             valid_epoch_targets,
             valid_epoch_labels,
             valid_epoch_texts,
-            tresh=0.5
         )
+
         if verbose == 2:
-            print("Valid metric:", valid_metric)
-            print("Valid BCE loss:", valid_epoch_losses.mean())
+            print("Valid metric: ", valid_metric)
+            print("Valid threshold: ", threshold)
+            print("Valid BCE loss: ", valid_epoch_losses.mean())
+
         # 3. Update learning rate (if needed)
         scheduler.step(valid_metric["f1"])
+
         # 4. Save best model
         if valid_metric["f1"] > best_metric["f1"]:
             best_metric = valid_metric
+            best_threshold = threshold
             state_dict = deepcopy(model.state_dict())
             best_model_state_dict = {
-                'model_params': model.params,
-                'state_dict': state_dict
+                'model':
+                    {
+                        'model_params': model.params,
+                        'state_dict': state_dict,
+                        'name': model.__class__.__name__
+                    }
             }
 
         # 5. Accumulate some stats
         train_all_epoch_losses.append(train_epoch_losses)
         valid_all_epoch_losses.append(valid_epoch_losses)
         valid_metrics.append(valid_metric)
-    return best_model_state_dict, best_metric
+
+    if return_stats:
+        return best_model_state_dict, best_metric, best_threshold, {'train': train_all_epoch_losses,
+                                                                    'valid_losses': valid_all_epoch_losses,
+                                                                    'valid_metrics': valid_metrics}
+    else:
+        return best_model_state_dict, best_metric, best_threshold

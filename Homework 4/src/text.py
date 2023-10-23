@@ -1,6 +1,14 @@
 import re
 
 
+def hard_processing(text):
+    text = re.sub(r"[{re.escape(string.punctuation)}]", "", text)
+    text = re.sub(r'\d', '', text)
+    text = re.sub(r'\b\w\b\s?', '', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text.lower()
+
+
 def remove_unbalanced_brackets(text):
     # Remove unopened or unclosed brackets
     while '(' in text and ')' not in text[text.index('('):]:
@@ -57,15 +65,15 @@ def get_locations(row, with_text=False):
     return (text, locs) if with_text else locs
 
 
-def update_locations(row):
+def update_locations(row, text_processor):
     text, locations = row
     location_texts = get_locations((text, locations))
-    text = preprocess_text(text)
+    text = text_processor(text)
 
     new_locations = []
     offset = 0
     for loc_text in location_texts:
-        clean_loc_text = preprocess_text(loc_text)
+        clean_loc_text = text_processor(loc_text)
         start_idx = text.find(clean_loc_text, offset)
         if start_idx != -1:
             end_idx = start_idx + len(clean_loc_text)
@@ -75,9 +83,9 @@ def update_locations(row):
     return text, new_locations
 
 
-def clean_text_and_locations(row):
+def clean_text_and_locations(row, text_processor=preprocess_text):
     index = 0
-    text, locations = update_locations(row)
+    text, locations = update_locations(row, text_processor)
     result: list[tuple[int, int]] = []
 
     while True:
@@ -109,7 +117,7 @@ def clean_text_and_locations(row):
             else:
                 result.append(location)
         except Exception:
-            result = -1
+            result = [-1]
 
         index += 1
-    return result
+    return text, result
