@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "transformer-summarizer"
+version = "0.1.0"
+description = ""
+authors = ["Andrii Zhuravlov"]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+torch = ">=2.0.0, !=2.0.1, !=2.1.0"
+transformers = "==4.32.1"
+optimum = "==1.13.0"
+onnxruntime = "==1.16.0"
+onnx = "==1.14.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
